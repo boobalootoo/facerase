@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Cover Camera</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+        }
+        /* Custom styles for the video and canvas to ensure they overlap and are responsive */
+        .camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            background-color: black;
+        }
+        video, canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            transform: scaleX(-1); /* Mirror the video feed for a more natural feel */
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen text-white p-4">
+
+    <h1 class="text-3xl font-bold mb-6 text-center">Face Cover Camera</h1>
+
+    <!-- Collapsible information section -->
+    <details class="w-full max-w-lg mb-6 bg-gray-800 p-4 rounded-lg shadow-inner">
+        <summary class="cursor-pointer text-lg font-semibold flex items-center justify-between">
+            How it Works
+            <!-- Simple SVG for the expand/collapse icon -->
+            <svg class="w-5 h-5 text-gray-400 transform transition-transform duration-200 open:rotate-180" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+        </summary>
+        <div class="mt-4 text-gray-300">
+            <p class="mb-2">This app uses your device's back camera to detect human faces in real-time. When a face is detected, a black circle is placed over it.</p>
+            <p>The "Capture" button will remain disabled until all faces are covered or no faces are visible in the camera frame. A loud shutter sound plays when a picture is successfully taken.</p>
+        </div>
+    </details>
+
+    <p class="text-center mb-4 text-gray-400">
+        Cover all faces to enable the shutter button.
+    </p>
+
+    <!-- The container for the video and canvas overlay -->
+    <div class="camera-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay-canvas"></canvas>
+    </div>
+
+    <!-- The shutter button and message display -->
+    <div class="mt-8 flex flex-col items-center space-y-4">
+        <button id="shutter-button"
+                class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-4 px-8 rounded-full shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+            Capture
+        </button>
+        <div id="message-box" class="text-lg text-red-400 font-semibold h-6"></div>
+    </div>
+    
+    <!-- Audio element for the shutter sound -->
+    <audio id="shutter-sound" src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/3/camera-shutter-click.mp3" preload="auto"></audio>
+
+    <!-- Face-api.js library and models -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    
+    <script>
+        // Use a unique ID for this app for Firestore storage if needed in the future
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        const video = document.getElementById('video');
+        const overlayCanvas = document.getElementById('overlay-canvas');
+        const shutterButton = document.getElementById('shutter-button');
+        const messageBox = document.getElementById('message-box');
+        const shutterSound = document.getElementById('shutter-sound');
+        const displaySize = { width: 0, height: 0 };
+        const loadingModelsMessage = 'Loading face detection models...';
+        const noFacesMessage = 'No faces detected. Ready to capture!';
+        
+        let isModelsLoaded = false;
+        let isCameraReady = false;
+
+        /**
+         * Main function to set up the camera, load models, and start the detection loop.
+         */
+        async function setup() {
+            messageBox.textContent = loadingModelsMessage;
+            shutterButton.disabled = true;
+
+            // Load face-api.js models from a CDN
+            try {
+                await faceapi.loadTinyFaceDetectorModel('https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights/');
+                await faceapi.loadFaceLandmarkModel('https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights/');
+                isModelsLoaded = true;
+                messageBox.textContent = 'Models loaded. Requesting camera access...';
+            } catch (err) {
+                console.error("Failed to load face-api.js models:", err);
+                messageBox.textContent = 'Error: Failed to load face detection models.';
+                return;
+            }
+
+            // Get access to the back camera of the device
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment' 
+                    } 
+                });
+                video.srcObject = stream;
+                isCameraReady = true;
+                messageBox.textContent = '';
+            } catch (err) {
+                console.error("Failed to get camera access:", err);
+                messageBox.textContent = 'Error: Camera access denied. Please enable it in your browser settings.';
+                return;
+            }
+
+            // Set up a listener to start face detection once the video stream is ready
+            video.addEventListener('play', () => {
+                // Resize the canvas to match the video dimensions
+                displaySize.width = video.videoWidth;
+                displaySize.height = video.videoHeight;
+                faceapi.matchDimensions(overlayCanvas, displaySize);
+                
+                // Start the detection loop, now at 20 FPS for better responsiveness
+                setInterval(detectFaces, 50);
+            });
+        }
+        
+        /**
+         * The main face detection and drawing loop.
+         */
+        async function detectFaces() {
+            if (!isModelsLoaded || !isCameraReady) return;
+
+            try {
+                // Detect faces in the video stream using the tiny face detector
+                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+                
+                // Clear the canvas from previous drawings
+                const ctx = overlayCanvas.getContext('2d');
+                ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+                let allFacesCovered = true;
+
+                // If faces are detected, draw black circles over them and colored boxes
+                if (detections.length > 0) {
+                    messageBox.textContent = `Faces detected: ${detections.length}. Cover them!`;
+                    shutterButton.disabled = true;
+
+                    // Resize the detections to match the display size of the canvas
+                    const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                    
+                    resizedDetections.forEach(detection => {
+                        const box = detection.box;
+                        const centerX = box.x + box.width / 2;
+                        const centerY = box.y + box.height / 2;
+                        const radius = Math.max(box.width, box.height) * 0.6; // Slightly larger circle for better coverage
+
+                        // Check if the face is covered by the black circle
+                        // A simple check is to see if the central point of the face is "covered"
+                        const isCovered = ctx.getImageData(centerX, centerY, 1, 1).data[0] === 0;
+
+                        // Draw a colored box to indicate the face location
+                        ctx.beginPath();
+                        ctx.strokeStyle = isCovered ? 'rgba(0, 255, 0, 0.7)' : 'rgba(255, 0, 0, 0.7)';
+                        ctx.lineWidth = 2;
+                        ctx.rect(box.x, box.y, box.width, box.height);
+                        ctx.stroke();
+
+                        // Draw a black circle over each detected face
+                        ctx.beginPath();
+                        ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+                        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                        ctx.fill();
+
+                        if (!isCovered) {
+                            allFacesCovered = false;
+                        }
+                    });
+
+                    if (allFacesCovered) {
+                        shutterButton.disabled = false;
+                        messageBox.textContent = 'All faces covered. Ready to capture!';
+                    }
+
+                } else {
+                    // No faces detected, enable the button and clear the canvas
+                    shutterButton.disabled = false;
+                    messageBox.textContent = noFacesMessage;
+                }
+
+            } catch (err) {
+                console.error("Face detection failed:", err);
+            }
+        }
+
+        /**
+         * Handles the capture button click event.
+         */
+        shutterButton.addEventListener('click', () => {
+            // Check if the button is not disabled
+            if (!shutterButton.disabled) {
+                // Play the shutter sound
+                shutterSound.play().catch(e => console.error("Audio playback failed:", e));
+
+                // Create a temporary canvas to get the final image with the overlay
+                const captureCanvas = document.createElement('canvas');
+                captureCanvas.width = video.videoWidth;
+                captureCanvas.height = video.videoHeight;
+                const ctx = captureCanvas.getContext('2d');
+
+                // Draw the video frame onto the temporary canvas (flip the image back to normal)
+                ctx.save();
+                ctx.scale(-1, 1);
+                ctx.drawImage(video, -captureCanvas.width, 0, captureCanvas.width, captureCanvas.height);
+                ctx.restore();
+
+                // Get the current state of the overlay canvas
+                const overlayData = overlayCanvas.getContext('2d').getImageData(0, 0, overlayCanvas.width, overlayCanvas.height);
+                // Draw the overlay data onto the temporary canvas
+                ctx.drawImage(overlayCanvas, 0, 0);
+
+                // Create a download link for the captured image
+                const image = captureCanvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.href = image;
+                link.download = 'captured-image.png';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        });
+
+        // Start the application
+        window.addEventListener('load', setup);
+    </script>
+</body>
+</html>
