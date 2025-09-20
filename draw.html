@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pixel Drawing App</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      align-items: flex-start;
+      margin: 20px;
+      font-family: Arial, sans-serif;
+    }
+    #controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-right: 20px;
+    }
+    #spectrum {
+      width: 30px;
+      height: 256px;
+      border: 1px solid #000;
+      cursor: crosshair;
+      margin-bottom: 10px;
+    }
+    #resolution {
+      width: 150px;
+    }
+    canvas {
+      border: 1px solid black;
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <canvas id="spectrum"></canvas>
+    <input type="range" id="resolution" min="1" max="100" value="16">
+    <label for="resolution">Resolution</label>
+  </div>
+  <canvas id="drawingCanvas" width="512" height="512"></canvas>
+
+  <script>
+    const spectrum = document.getElementById('spectrum');
+    const spectrumCtx = spectrum.getContext('2d');
+    const resolutionSlider = document.getElementById('resolution');
+    const drawingCanvas = document.getElementById('drawingCanvas');
+    const ctx = drawingCanvas.getContext('2d');
+
+    let gridSize = parseInt(resolutionSlider.value);
+    let currentColor = '#000000';
+    let isDrawing = false;
+
+    function drawSpectrum() {
+      const gradient = spectrumCtx.createLinearGradient(0, 0, 0, spectrum.height);
+      gradient.addColorStop(0, 'white');
+      gradient.addColorStop(0.1, 'red');
+      gradient.addColorStop(0.2, 'orange');
+      gradient.addColorStop(0.3, 'yellow');
+      gradient.addColorStop(0.4, 'green');
+      gradient.addColorStop(0.5, 'cyan');
+      gradient.addColorStop(0.6, 'blue');
+      gradient.addColorStop(0.7, 'magenta');
+      gradient.addColorStop(0.9, 'black');
+      gradient.addColorStop(1, 'black');
+      spectrumCtx.fillStyle = gradient;
+      spectrumCtx.fillRect(0, 0, spectrum.width, spectrum.height);
+    }
+
+    drawSpectrum();
+
+    spectrum.addEventListener('click', (e) => {
+      const rect = spectrum.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const pixel = spectrumCtx.getImageData(0, y, 1, 1).data;
+      currentColor = `rgb(${pixel[0]},${pixel[1]},${pixel[2]})`;
+    });
+
+    drawingCanvas.addEventListener('mousedown', (e) => {
+      isDrawing = true;
+      drawPixel(e);
+    });
+
+    drawingCanvas.addEventListener('mousemove', (e) => {
+      if (isDrawing) drawPixel(e);
+    });
+
+    drawingCanvas.addEventListener('mouseup', () => {
+      isDrawing = false;
+    });
+
+    drawingCanvas.addEventListener('mouseleave', () => {
+      isDrawing = false;
+    });
+
+    function drawPixel(e) {
+      const rect = drawingCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const pixelX = Math.floor(x / (drawingCanvas.width / gridSize));
+      const pixelY = Math.floor(y / (drawingCanvas.height / gridSize));
+      ctx.fillStyle = currentColor;
+      ctx.fillRect(
+        pixelX * (drawingCanvas.width / gridSize),
+        pixelY * (drawingCanvas.height / gridSize),
+        drawingCanvas.width / gridSize,
+        drawingCanvas.height / gridSize
+      );
+    }
+
+    resolutionSlider.addEventListener('input', () => {
+      gridSize = parseInt(resolutionSlider.value);
+    });
+  </script>
+</body>
+</html>
