@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Face Cover Camera</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #1a1a1a;
+    }
+    .camera-container {
+      position: relative;
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      background-color: black;
+    }
+    video, canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      transform: scaleX(-1);
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #drawing-canvas {
+      transform: scaleX(1);
+      border: 2px solid #fff;
+      background-color: #ffffff;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen text-white p-4">
+
+  <h1 class="text-3xl font-bold mb-6 text-center">Face Cover Camera</h1>
+
+  <div class="w-full max-w-lg mb-6 bg-gray-800 p-6 rounded-lg shadow-inner">
+    <h2 class="text-xl font-semibold mb-4 text-center">Choose a Face Cover</h2>
+    <div class="flex flex-wrap justify-center gap-4">
+      <button id="cover-shape" class="cover-button bg-purple-600 hover:bg-purple-700 font-bold py-2 px-4 rounded-full transition-colors duration-200">Shape</button>
+      <button id="cover-emoji" class="cover-button bg-indigo-600 hover:bg-indigo-700 font-bold py-2 px-4 rounded-full transition-colors duration-200">Emoji</button>
+      <button id="cover-drawing" class="cover-button bg-blue-600 hover:bg-blue-700 font-bold py-2 px-4 rounded-full transition-colors duration-200">Your Drawing</button>
+    </div>
+
+    <!-- Drawing and emoji selection sub-panels -->
+    <div id="drawing-panel" class="mt-4 hidden flex-col items-center">
+      <p class="text-sm text-gray-400 mb-2">Draw a pixel art mask below!</p>
+      <!-- White square is the drawing canvas -->
+      <canvas id="drawing-canvas" class="w-48 h-48 rounded-md mb-2 mx-auto"></canvas>
+      <div class="flex gap-2 mt-2">
+        <button id="save-drawing" class="bg-emerald-500 hover:bg-emerald-600 font-bold py-2 px-4 rounded-full">Save Drawing</button>
+        <button id="clear-drawing" class="bg-red-500 hover:bg-red-600 font-bold py-2 px-4 rounded-full">Clear</button>
+      </div>
+    </div>
+
+    <div id="emoji-panel" class="mt-4 hidden flex-col items-center">
+      <h3 class="text-md font-semibold mb-2">Select an Emoji:</h3>
+      <div class="grid grid-cols-5 sm:grid-cols-7 gap-2">
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="😀">😀</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="😂">😂</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="😎">😎</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="🤫">🤫</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="🤖">🤖</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="👽">👽</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="😈">😈</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="🐶">🐶</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="🐱">🐱</button>
+        <button class="emoji-select text-4xl hover:bg-gray-700 rounded-lg p-2" data-emoji="🦊">🦊</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="text-center mb-4 text-gray-400">Cover all faces to enable the shutter button.</p>
+
+  <div class="camera-container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay-canvas"></canvas>
+  </div>
+
+  <div class="mt-8 flex flex-col items-center space-y-4">
+    <button id="shutter-button" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-4 px-8 rounded-full shadow-lg disabled:opacity-50">Capture</button>
+    <div id="message-box" class="text-lg text-red-400 font-semibold h-6"></div>
+  </div>
+
+  <details class="w-full max-w-lg mb-6 bg-gray-800 p-4 rounded-lg shadow-inner">
+    <summary class="cursor-pointer text-lg font-semibold flex items-center justify-between">
+      How it Works
+      <svg class="w-5 h-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+    </summary>
+    <div class="mt-4 text-gray-300">
+      <p>This app uses your back camera to detect faces in real-time. You can cover them with shapes, emojis, or your own drawing.</p>
+    </div>
+  </details>
+
+  <audio id="shutter-sound" src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/3/camera-shutter-click.mp3" preload="auto"></audio>
+
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const overlayCanvas = document.getElementById('overlay-canvas');
+    const shutterButton = document.getElementById('shutter-button');
+    const messageBox = document.getElementById('message-box');
+    const shutterSound = document.getElementById('shutter-sound');
+    const drawingCanvas = document.getElementById('drawing-canvas');
+    const saveDrawingButton = document.getElementById('save-drawing');
+    const clearDrawingButton = document.getElementById('clear-drawing');
+    const coverButtons = document.querySelectorAll('.cover-button');
+    const emojiButtons = document.querySelectorAll('.emoji-select');
+    const drawingPanel = document.getElementById('drawing-panel');
+    const emojiPanel = document.getElementById('emoji-panel');
+
+    let isModelsLoaded = false;
+    let isCameraReady = false;
+    let coverType = 'shape';
+    let currentEmoji = '😀';
+    let customDrawing = null;
+
+    let isDrawing = false;
+    const drawingCtx = drawingCanvas.getContext('2d');
+
+    async function setup() {
+      messageBox.textContent = 'Loading models...';
+      shutterButton.disabled = true;
+
+      try {
+        await faceapi.loadTinyFaceDetectorModel('https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights/');
+        await faceapi.loadFaceLandmarkModel('https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights/');
+        isModelsLoaded = true;
+        messageBox.textContent = 'Models loaded. Requesting camera...';
+      } catch (err) {
+        messageBox.textContent = 'Error loading models';
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+        isCameraReady = true;
+        messageBox.textContent = '';
+      } catch (err) {
+        messageBox.textContent = 'Camera access denied';
+        return;
+      }
+
+      video.addEventListener('play', () => {
+        faceapi.matchDimensions(overlayCanvas, { width: video.videoWidth, height: video.videoHeight });
+        animate();
+      });
+
+      drawingCanvas.width = 100;
+      drawingCanvas.height = 100;
+      drawingCtx.fillStyle = 'white';
+      drawingCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+      drawingCtx.imageSmoothingEnabled = false;
+
+      document.getElementById('cover-shape').classList.add('ring-2', 'ring-white');
+      document.querySelector('.emoji-select').classList.add('ring-2', 'ring-white');
+    }
+
+    async function animate() {
+      if (!isModelsLoaded || !isCameraReady) {
+        requestAnimationFrame(animate);
+        return;
+      }
+      const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+      const ctx = overlayCanvas.getContext('2d');
+      ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      const resized = faceapi.resizeResults(detections, { width: video.videoWidth, height: video.videoHeight });
+
+      if (resized.length > 0) {
+        messageBox.textContent = `Faces: ${resized.length}`;
+        shutterButton.disabled = true;
+        resized.forEach(d => {
+          const box = d.box;
+          const size = Math.max(box.width, box.height) * 1.5;
+          const x = box.x + box.width / 2;
+          const y = box.y + box.height / 2;
+          drawCover(ctx, x, y, size);
+        });
+      } else {
+        shutterButton.disabled = false;
+        messageBox.textContent = 'No faces. Ready!';
+      }
+      requestAnimationFrame(animate);
+    }
+
+    function drawCover(ctx, x, y, size) {
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.translate(-x * 2, 0);
+      switch (coverType) {
+        case 'shape':
+          ctx.beginPath();
+          ctx.fillStyle = 'black';
+          ctx.arc(x, y, size / 2, 0, 2 * Math.PI);
+          ctx.fill();
+          break;
+        case 'emoji':
+          ctx.font = `${size}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(currentEmoji, x, y);
+          break;
+        case 'drawing':
+          if (customDrawing) ctx.drawImage(customDrawing, x - size / 2, y - size / 2, size, size);
+          else {
+            ctx.beginPath();
+            ctx.fillStyle = 'black';
+            ctx.arc(x, y, size / 2, 0, 2 * Math.PI);
+            ctx.fill();
+          }
+          break;
+      }
+      ctx.restore();
+    }
+
+    shutterButton.addEventListener('click', () => {
+      if (!shutterButton.disabled) {
+        shutterSound.play();
+        const captureCanvas = document.createElement('canvas');
+        captureCanvas.width = video.videoWidth;
+        captureCanvas.height = video.videoHeight;
+        const ctx = captureCanvas.getContext('2d');
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, -captureCanvas.width, 0);
+        ctx.restore();
+        ctx.drawImage(overlayCanvas, 0, 0);
+        const link = document.createElement('a');
+        link.href = captureCanvas.toDataURL('image/png');
+        link.download = 'capture.png';
+        link.click();
+      }
+    });
+
+    coverButtons.forEach(btn => btn.addEventListener('click', () => {
+      coverButtons.forEach(b => b.classList.remove('ring-2', 'ring-white'));
+      btn.classList.add('ring-2', 'ring-white');
+      coverType = btn.id.replace('cover-', '');
+      drawingPanel.classList.toggle('hidden', coverType !== 'drawing');
+      emojiPanel.classList.toggle('hidden', coverType !== 'emoji');
+    }));
+
+    emojiButtons.forEach(btn => btn.addEventListener('click', () => {
+      currentEmoji = btn.dataset.emoji;
+      emojiButtons.forEach(b => b.classList.remove('ring-2', 'ring-white'));
+      btn.classList.add('ring-2', 'ring-white');
+    }));
+
+    drawingCanvas.addEventListener('mousedown', e => { isDrawing = true; draw(e); });
+    drawingCanvas.addEventListener('mousemove', e => { if (isDrawing) draw(e); });
+    drawingCanvas.addEventListener('mouseup', () => { isDrawing = false; });
+    drawingCanvas.addEventListener('mouseleave', () => { isDrawing = false; });
+
+    function draw(e) {
+      const rect = drawingCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      drawingCtx.fillStyle = 'black';
+      drawingCtx.fillRect(x, y, 2, 2);
+    }
+
+    saveDrawingButton.addEventListener('click', () => {
+      customDrawing = new Image();
+      customDrawing.src = drawingCanvas.toDataURL();
+      drawingPanel.classList.add('hidden');
+      coverType = 'drawing';
+    });
+
+    clearDrawingButton.addEventListener('click', () => {
+      drawingCtx.fillStyle = 'white';
+      drawingCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+      customDrawing = null;
+    });
+
+    window.addEventListener('load', setup);
+  </script>
+</body>
+</html>
